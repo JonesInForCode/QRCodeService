@@ -1,5 +1,6 @@
 package qrcodeapi.web;
 
+import com.google.zxing.WriterException;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,52 +23,50 @@ public class ResponseController {
 
     @GetMapping("/api/qrcode")
     public ResponseEntity<?> getImage(@RequestParam(defaultValue = "250") int size,
-                                      @RequestParam(defaultValue = "png") String type) {
-        boolean isInvalidSize = size < 150 || size > 350;
-        boolean isInvalidType = !type.equalsIgnoreCase("png") && !type.equalsIgnoreCase("jpeg") &&
-                !type.equalsIgnoreCase("jpg") && !type.equalsIgnoreCase("gif");
+                                      @RequestParam(defaultValue = "png") String type,
+                                      @RequestParam String contents) {
+        if (contents == null || contents.isBlank()) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("error", "Contents cannot be null or blank"));
+        }
 
-        if (isInvalidSize) {
+        if (size < 150 || size > 350) {
             return ResponseEntity
                     .badRequest()
                     .body(Map.of("error", "Image size must be between 150 and 350 pixels"));
         }
 
-        if (isInvalidType) {
+        if (!type.equalsIgnoreCase("png") && !type.equalsIgnoreCase("jpeg") && !type.equalsIgnoreCase("gif")) {
             return ResponseEntity
                     .badRequest()
                     .body(Map.of("error", "Only png, jpeg and gif image types are supported"));
         }
 
         try {
-            BufferedImage bufferedImage = new BufferedImageCreator("content", size).createImage();
+            BufferedImage bufferedImage = new BufferedImageCreator(contents, size).createImage();
 
-            try (var baos = new ByteArrayOutputStream()) {
-                ImageIO.write(bufferedImage, type, baos);
-                byte[] bytes = baos.toByteArray();
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            String formatName = type.equalsIgnoreCase("jpg") ? "jpeg" : type.toLowerCase();
+            ImageIO.write(bufferedImage, formatName, baos);
+            byte[] imageBytes = baos.toByteArray();
 
-                MediaType mediaType;
-                switch (type.toLowerCase()) {
-                    case "png":
-                        mediaType = MediaType.IMAGE_PNG;
-                        break;
-                    case "jpeg":
-                        mediaType = MediaType.IMAGE_JPEG;
-                        break;
-                    case "gif":
-                        mediaType = MediaType.IMAGE_GIF;
-                        break;
-                    default:
-                        throw new IllegalArgumentException("Unsupported image type: " + type);
-                }
+            MediaType mediaType = switch (formatName) {
+                case "png" -> MediaType.IMAGE_PNG;
+                case "jpeg" -> MediaType.IMAGE_JPEG;
+                case "gif" -> MediaType.IMAGE_GIF;
+                default -> throw new IllegalArgumentException("Unsupported image type");
+            };
 
-                return ResponseEntity.ok().contentType(mediaType).body(bytes);
-            }
-        } catch (IOException e) {
+            return ResponseEntity.ok()
+                    .contentType(mediaType)
+                    .body(imageBytes);
+        } catch (WriterException | IOException e) {
             return ResponseEntity
-                    .internalServerError()
-                    .body(Map.of("error", "Failed to generate QR code image"));
+                   .internalServerError()
+                   .body(Map.of("error", "Failed to generate QR code image"));
         }
+
     }
 
 }
